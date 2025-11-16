@@ -7,10 +7,13 @@ After=systemd-modules-load.service dev-spidev0.0.device sysinit.target
 
 [Service]
 Type=simple
-# Run from the project directory so relative assets (if any) work
-WorkingDirectory=/home/clement/apps/aneo_led
-# Use env to find the system python3; explicit full path is fine too (/usr/bin/python3)
-ExecStart=/usr/bin/env python3 /home/clement/apps/aneo_led/led_aneo.py
+# Default working directory and ExecStart point to the conventional install location /opt/aneo_led.
+# The installer (`deploy/install_service.sh`) will rewrite these lines to the actual install path
+# and will set ExecStart to use a virtualenv python if requested.
+WorkingDirectory=/opt/aneo_led
+# By default the unit uses the system python executable to run the script. The installer may
+# replace ExecStart to point to a venv python (e.g. /opt/aneo_led/venv/bin/python).
+ExecStart=/usr/bin/env python3 /opt/aneo_led/led_aneo.py
 Restart=always
 RestartSec=5
 # Keep logs in the journal
