@@ -144,7 +144,7 @@ fi
 
 # Install required python packages (idempotent)
 echo "Installing Python packages: pi5neo psutil spidev"
-$PIP install --upgrade pi5neo psutil spidev
+$PIP install --upgrade pi5neo psutil spidev --break-system-packages
 
 # Reload systemd, enable and start service
 systemctl daemon-reload
