@@ -1,29 +1,24 @@
 [Unit]
-Description=aneo LED CPU meter service
-Documentation=
-# Start after kernel modules and ensure SPI device is available
+# Start after SPI device is available
+After=dev-spidev0.0.device
 Wants=dev-spidev0.0.device
-After=systemd-modules-load.service dev-spidev0.0.device sysinit.target
+
+# Start very early in boot
+Before=multi-user.target
+DefaultDependencies=no
 
 [Service]
+# Keep the service simple and restart on failure
 Type=simple
-# Default working directory and ExecStart point to the conventional install location /opt/aneo_led.
-# The installer (`deploy/install_service.sh`) will rewrite these lines to the actual install path
-# and will set ExecStart to use a virtualenv python if requested.
-WorkingDirectory=/opt/aneo_led
-# By default the unit uses the system python executable to run the script. The installer may
-# replace ExecStart to point to a venv python (e.g. /opt/aneo_led/venv/bin/python).
-ExecStart=/usr/bin/env python3 /opt/aneo_led/led_aneo.py
 Restart=always
 RestartSec=5
-# Keep logs in the journal
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=aneo-led
-# Run as root so the service can access /dev/spidev*; change to a less-privileged user if configured
+ExecStart=/usr/bin/env python3 /opt/aneo_led/led_aneo.py
+WorkingDirectory=/opt/aneo_led
 User=root
 Group=root
 
 [Install]
-# Start in normal multi-user boot. The service will also wait for the SPI device due to the Wants/After above.
-WantedBy=multi-user.target
+WantedBy=sysinit.target
