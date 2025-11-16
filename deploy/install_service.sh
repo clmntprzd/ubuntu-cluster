@@ -152,13 +152,33 @@ else
   PY_CMD="/usr/bin/env python3"
 fi
 
-# Replace User=, Group=, ExecStart= and WorkingDirectory= lines if present, otherwise append them
+# Replace User=, Group=, ExecStart= and WorkingDirectory= lines if present, inserting them into the [Service] section.
+# This avoids placing service directives into the [Install] section when appending.
 awk -v user="$SERVICE_USER" -v group="$SERVICE_GROUP" \
     -v execpath="$INSTALL_DIR/led_aneo.py" -v workdir="$INSTALL_DIR" -v pycmd="$PY_CMD" '
-  BEGIN{u="User="user; g="Group="group; es = "ExecStart=" pycmd " " execpath; wdline = "WorkingDirectory=" workdir}
+  BEGIN{
+    u="User="user; g="Group="group;
+    es = "ExecStart=" pycmd " " execpath;
+    wdline = "WorkingDirectory=" workdir;
+    in_service=0; inserted=0;
+  }
+  # remove any existing directives we will set
   /^(User|Group|ExecStart|WorkingDirectory)=/ {next}
-  {print}
-  END{print es; print wdline; print u; print g}
+
+  # detect Service section start
+  /^\[Service\]/ { in_service=1; print; next }
+
+  # when leaving Service section and not yet inserted, insert our directives before the next section
+  (/^\[.*\]/ && in_service==1 && inserted==0) {
+    print es; print wdline; print u; print g; inserted=1; in_service=0;
+    print; next
+  }
+
+  { print }
+
+  END{
+    if(inserted==0) { print es; print wdline; print u; print g }
+  }
 ' "$SERVICE_SRC" > "$TMP_SERVICE"
 
 # Install service file
