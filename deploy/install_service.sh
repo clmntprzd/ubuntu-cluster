@@ -8,6 +8,10 @@ set -euo pipefail
 # Default values
 SERVICE_USER="root"
 SERVICE_GROUP="root"
+# Where to install the project on the target system. Default: /opt/aneo_led
+INSTALL_DIR="/opt/aneo_led"
+# Create and use a virtualenv under the install dir when true
+USE_VENV="false"
 
 print_usage() {
   cat <<EOF
@@ -38,6 +42,19 @@ while [[ $# -gt 0 ]]; do
       SERVICE_USER="$1"
       shift
       ;;
+    --install-dir)
+      shift
+      if [[ $# -eq 0 ]]; then
+        echo "--install-dir requires an argument"
+        exit 1
+      fi
+      INSTALL_DIR="$1"
+      shift
+      ;;
+    --venv)
+      USE_VENV="true"
+      shift
+      ;;
     -h|--help)
       print_usage
       exit 0
@@ -58,6 +75,7 @@ fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+INSTALL_DIR="$(readlink -f "$INSTALL_DIR")"
 SERVICE_SRC="$SCRIPT_DIR/aneo-led.service"
 SERVICE_DEST="/etc/systemd/system/aneo-led.service"
 UDEV_RULE="/etc/udev/rules.d/99-aneo-spi.rules"
@@ -88,15 +106,59 @@ if [[ "$SERVICE_USER" != "root" ]]; then
   usermod -a -G spi "$SERVICE_USER" || true
 fi
 
-# Prepare modified service file content (adjust User/Group lines)
+# Copy project to install dir (idempotent). We copy the entire project folder so the service
+# runs from a predictable location independent of where the user ran the installer.
+echo "Installing project to $INSTALL_DIR"
+mkdir -p "$INSTALL_DIR"
+if command -v rsync >/dev/null 2>&1; then
+  rsync -a --delete "$PROJECT_ROOT/" "$INSTALL_DIR/"
+else
+  # fallback to tar/untar for portability
+  (cd "$PROJECT_ROOT" && tar -c .) | (cd "$INSTALL_DIR" && tar -x --overwrite)
+fi
+# Ensure ownership matches the requested service user so files are accessible when service runs
+chown -R "$SERVICE_USER":"$SERVICE_GROUP" "$INSTALL_DIR" || true
+
+# If requested, create a virtualenv in the install dir and install python deps into it
+VENV_DIR="$INSTALL_DIR/venv"
+VENV_PYTHON="$VENV_DIR/bin/python"
+VENV_PIP="$VENV_DIR/bin/pip"
+if [[ "$USE_VENV" == "true" ]]; then
+  echo "Setting up virtualenv at $VENV_DIR"
+  if [[ ! -d "$VENV_DIR" ]]; then
+    # Use system python3 to create venv
+    if command -v python3 >/dev/null 2>&1; then
+      python3 -m venv "$VENV_DIR"
+    else
+      echo "python3 not found; cannot create virtualenv" >&2
+      exit 1
+    fi
+  fi
+  # Upgrade pip inside venv and install packages
+  "$VENV_PYTHON" -m pip install --upgrade pip
+  "$VENV_PIP" install --upgrade pi5neo psutil spidev
+else
+  # Will install system-wide later if venv not used
+  VENV_DIR=""
+fi
+
+# Prepare modified service file content (adjust ExecStart/WorkingDirectory and User/Group lines)
 TMP_SERVICE="/tmp/aneo-led.service.$$"
 
-# Replace User= and Group= lines if present, otherwise append them
-awk -v user="$SERVICE_USER" -v group="$SERVICE_GROUP" '
-  BEGIN{u="User="user; g="Group="group}
-  /^(User|Group)=/ {next}
+# Decide ExecStart python command: venv python if created, otherwise system env python3
+if [[ -n "${VENV_DIR}" && -x "${VENV_PYTHON}" ]]; then
+  PY_CMD="${VENV_PYTHON}"
+else
+  PY_CMD="/usr/bin/env python3"
+fi
+
+# Replace User=, Group=, ExecStart= and WorkingDirectory= lines if present, otherwise append them
+awk -v user="$SERVICE_USER" -v group="$SERVICE_GROUP" \
+    -v execpath="$INSTALL_DIR/led_aneo.py" -v workdir="$INSTALL_DIR" -v pycmd="$PY_CMD" '
+  BEGIN{u="User="user; g="Group="group; es = "ExecStart=" pycmd " " execpath; wdline = "WorkingDirectory=" workdir}
+  /^(User|Group|ExecStart|WorkingDirectory)=/ {next}
   {print}
-  END{print u; print g}
+  END{print es; print wdline; print u; print g}
 ' "$SERVICE_SRC" > "$TMP_SERVICE"
 
 # Install service file
