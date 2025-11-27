@@ -75,6 +75,11 @@ To test the LED driver without the service:
 sudo python3 led_jetson.py
 ```
 
+**If you get "Could not determine Jetson model" error:**
+1. Upgrade Jetson.GPIO: `sudo pip3 install --upgrade "Jetson.GPIO>=2.1.9"`
+2. Add your user to spi group: `sudo usermod -aG spi $USER`
+3. Log out and back in (or reboot)
+
 Press Ctrl+C to stop.
 
 ## Configuration
@@ -88,17 +93,36 @@ Edit `led_jetson.py` to customize:
 
 ## Troubleshooting
 
+### "Could not determine Jetson model" error
+- **Root cause**: Outdated Jetson.GPIO library (needs version >= 2.1.9)
+- **Fix**:
+  ```bash
+  sudo pip3 install --upgrade "Jetson.GPIO>=2.1.9"
+  sudo usermod -aG spi $USER
+  # Log out and back in, or reboot
+  ```
+- Verify fix: `pip3 show Jetson.GPIO` (check version)
+- Verify group: `groups` (should show "spi")
+
+### SPI device not found
+- Check SPI is enabled: `ls -l /dev/spidev0.0`
+- Enable SPI: `sudo /opt/nvidia/jetson-io/jetson-io.py`
+- Reboot after enabling SPI
+
 ### LEDs not working
-- Check LED strip power supply
-- Verify GPIO pin connection (Pin 12 / GPIO18)
-- Check permissions: `sudo usermod -a -G gpio $USER`
-- Try running with sudo: `sudo python3 led_jetson.py`
+- Check LED strip power supply (5V, adequate amperage)
+- Verify SPI MOSI connection (Pin 19 to LED DIN)
+- Check ground connection
+- Verify SPI permissions: `ls -l /dev/spidev0.0`
+- Ensure user is in spi group: `groups`
 
 ### Library errors
-- The script tries `rpi_ws281x` first, then falls back to `adafruit-circuitpython-neopixel`
-- Reinstall: `sudo pip3 install --upgrade rpi_ws281x`
+- Install dependencies: `pip3 install adafruit-circuitpython-neopixel-spi adafruit-blinka`
+- Check Jetson.GPIO: `pip3 show Jetson.GPIO` (should be >= 2.1.9)
 
 ### Service not starting
 - Check logs: `sudo journalctl -u jetson-led.service -xe`
 - Verify script path in service file
+- Check Jetson.GPIO version
+- Verify service user is in spi group
 - Test manually: `sudo python3 led_jetson.py`

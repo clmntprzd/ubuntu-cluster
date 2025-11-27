@@ -129,6 +129,12 @@ if [[ "$SERVICE_USER" != "root" ]]; then
   usermod -a -G spi "$SERVICE_USER" || true
 fi
 
+# Also add the actual user (who ran sudo) to spi group for manual testing
+if [[ -n "$SUDO_USER" ]] && [[ "$SUDO_USER" != "root" ]]; then
+  echo "Adding $SUDO_USER to group spi for manual testing"
+  usermod -a -G spi "$SUDO_USER" || true
+fi
+
 # Copy only the Jetson LED script to install dir
 echo "Installing LED script to $INSTALL_DIR"
 mkdir -p "$INSTALL_DIR"
@@ -243,7 +249,9 @@ else
 fi
 
 # Install required python packages for Jetson NeoPixels via SPI
-echo "Installing Python packages: adafruit-circuitpython-neopixel-spi psutil"
+echo "Installing Python packages: Jetson.GPIO, adafruit-circuitpython-neopixel-spi, psutil"
+# Upgrade Jetson.GPIO to fix "Could not determine Jetson model" issue
+$PIP install --upgrade "Jetson.GPIO>=2.1.9"
 $PIP install --upgrade adafruit-circuitpython-neopixel-spi psutil
 
 # Reload systemd, enable and start service
@@ -268,7 +276,9 @@ Notes:
  - Service runs as: $SERVICE_USER:$SERVICE_GROUP
  - Udev rule: $UDEV_RULE (sets SPI devices to group 'spi' + mode 0660)
  - NeoPixels connected via SPI (default: /dev/spidev0.0)
- - If you used a non-root service user, you may need to log out/login or reboot for group membership to take effect.
+ - Jetson.GPIO upgraded to >= 2.1.9 (fixes model detection issues)
+ - User(s) added to 'spi' group for SPI device access
+ - You may need to log out/login or reboot for group membership to take effect.
 
 If the service fails to start, check logs with:
   sudo journalctl -u jetson-led.service -f
